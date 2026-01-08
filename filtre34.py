@@ -1,98 +1,60 @@
-# filtre34.py
-import streamlit as st
+import ccxt
 import pandas as pd
-import requests
-from datetime import datetime
-from streamlit_autorefresh import st_autorefresh
+import numpy as np
 
-# --------------------------
-# Telegram bilgileri
-# --------------------------
-TOKEN = "8370749084:AAH1V0eFCMTvQfrsFBgcqlkSx7E8UK3YRKY"       # BotFather’dan aldığın token
-CHAT_ID = "8538760832"  # Telegram chat ID
+# OKX bağlantısı
+exchange = ccxt.okx({
+    'enableRateLimit': True,
+})
 
-# --------------------------
-# Sayfa ayarları
-# --------------------------
-st.set_page_config(page_title="EMA34 Yukarı Kıran Coinler", layout="wide")
-st.title("EMA34 Yukarı Kıran Coinler (OKX + Telegram)")
+TIMEFRAME = '1h'
+EMA_PERIOD = 34
+LIMIT = 100
 
-# --------------------------
-# 15 dakikada bir sayfayı otomatik yenile
-# --------------------------
-st_autorefresh(interval=900000, key="datarefresh")  # 900000 ms = 15 dk
+def calculate_ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
 
-# --------------------------
-# Telegram mesaj gönderme
-# --------------------------
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    requests.post(url, data=payload)
+# USDT paritelerini al
+markets = exchange.load_markets()
+symbols = [
+    s for s in markets
+    if s.endswith('/USDT') and markets[s]['active']
+]
 
-# --------------------------
-# OKX USDT coin listesi
-# --------------------------
-@st.cache_data(ttl=900)
-def get_okx_tickers():
-    url = "https://www.okx.com/api/v5/market/tickers?instType=SPOT"
-    data = requests.get(url).json()
-    symbols = [item["instId"] for item in data["data"] if item["instId"].endswith("-USDT")]
-    return symbols
+filtered_coins = []
 
-# --------------------------
-# Kline verisi
-# --------------------------
-@st.cache_data(ttl=900)
-def get_klines(symbol, interval="1H", limit=50):
-    url = f"https://www.okx.com/api/v5/market/candles?instId={symbol}&bar={interval}&limit={limit}"
-    data = requests.get(url).json()
-    df = pd.DataFrame(data["data"])
-    df = df[[0, 4]]  # timestamp, close
-    df.columns = ["timestamp","close"]
-    df["close"] = df["close"].astype(float)
-    return df
+for symbol in symbols:
+    try:
+        ohlcv = exchange.fetch_ohlcv(
+            symbol,
+            timeframe=TIMEFRAME,
+            limit=LIMIT
+        )
 
-# --------------------------
-# EMA34 hesaplama
-# --------------------------
-def calculate_ema34(df):
-    df["EMA34"] = df["close"].ewm(span=34, adjust=False).mean()
-    return df
+        df = pd.DataFrame(
+            ohlcv,
+            columns=['time','open','high','low','close','volume']
+        )
 
-# --------------------------
-# EMA34'ü yukarı kıran coinleri filtrele
-# --------------------------
-def filter_coins(symbols):
-    results = []
-    for sym in symbols:
-        df = calculate_ema34(get_klines(sym))
-        if df["close"].iloc[-1] > df["EMA34"].iloc[-1] and df["close"].iloc[-2] <= df["EMA34"].iloc[-2]:
-            results.append(f"{sym}: {df['close'].iloc[-1]:.2f} USDT")
-    return results
+        df['ema34'] = calculate_ema(df['close'], EMA_PERIOD)
 
-# --------------------------
-# Fonksiyon: tarama ve web + telegram güncelle
-# --------------------------
-def run_scan():
-    symbols = get_okx_tickers()
-    filtered = filter_coins(symbols)
+        last_close = df['close'].iloc[-1]
+        last_ema = df['ema34'].iloc[-1]
 
-    st.subheader(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - EMA34'ü yukarı kıran coinler")
-    if filtered:
-        st.dataframe(pd.DataFrame(filtered, columns=["Coin ve Fiyat"]))
-        message = "*EMA34'ü yukarı kıran coinler:*\n" + "\n".join(filtered)
-        send_telegram(message)
-    else:
-        st.write("Şu anda EMA34'ü yukarı kıran coin yok.")
+        # Kapanış > EMA34 koşulu
+        if last_close > last_ema:
+            filtered_coins.append({
+                'symbol': symbol,
+                'close': round(last_close, 4),
+                'ema34': round(last_ema, 4)
+            })
 
-# --------------------------
-# Otomatik tarama
-# --------------------------
-run_scan()
+    except Exception:
+        continue
 
-# --------------------------
-# Manuel tarama butonu
-# --------------------------
-if st.button("Manuel Tarama"):
-    run_scan()
+# Sonuçlar
+print("📊 1 Saatlik Grafikte Close > EMA34 Olan Coinler:\n")
+for coin in filtered_coins:
+    print(
+        f"{coin['symbol']} | Close: {coin['close']} | EMA34: {coin['ema34']}"
+    )
