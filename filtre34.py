@@ -15,15 +15,15 @@ CHAT_ID = "8538760832"  # Telegram chat ID
 # Sayfa ayarları
 # --------------------------
 st.set_page_config(page_title="EMA34 Yukarı Kıran Coinler", layout="wide")
-st.title("EMA34 Yukarı Kıran Coinler (15dk Tarama) - OKX + Telegram")
+st.title("EMA34 Yukarı Kıran Coinler (OKX + Telegram)")
 
 # --------------------------
 # 15 dakikada bir sayfayı otomatik yenile
 # --------------------------
-st_autorefresh(interval=900000, key="datarefresh")  # 900000 ms = 15 dakika
+st_autorefresh(interval=900000, key="datarefresh")  # 900000 ms = 15 dk
 
 # --------------------------
-# Telegram mesaj gönderme fonksiyonu
+# Telegram mesaj gönderme
 # --------------------------
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -49,7 +49,7 @@ def get_klines(symbol, interval="1H", limit=50):
     data = requests.get(url).json()
     df = pd.DataFrame(data["data"])
     df = df[[0, 4]]  # timestamp, close
-    df.columns = ["timestamp", "close"]
+    df.columns = ["timestamp","close"]
     df["close"] = df["close"].astype(float)
     return df
 
@@ -72,23 +72,27 @@ def filter_coins(symbols):
     return results
 
 # --------------------------
-# Ana işlem
+# Fonksiyon: tarama ve web + telegram güncelle
 # --------------------------
-symbols = get_okx_tickers()
-filtered = filter_coins(symbols)
+def run_scan():
+    symbols = get_okx_tickers()
+    filtered = filter_coins(symbols)
+
+    st.subheader(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - EMA34'ü yukarı kıran coinler")
+    if filtered:
+        st.dataframe(pd.DataFrame(filtered, columns=["Coin ve Fiyat"]))
+        message = "*EMA34'ü yukarı kıran coinler:*\n" + "\n".join(filtered)
+        send_telegram(message)
+    else:
+        st.write("Şu anda EMA34'ü yukarı kıran coin yok.")
 
 # --------------------------
-# Webde göster
+# Otomatik tarama
 # --------------------------
-st.subheader(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - EMA34'ü yukarı kıran coinler")
-if filtered:
-    st.dataframe(pd.DataFrame(filtered, columns=["Coin ve Fiyat"]))
-else:
-    st.write("Şu anda EMA34'ü yukarı kıran coin yok.")
+run_scan()
 
 # --------------------------
-# Telegram mesaj gönder
+# Manuel tarama butonu
 # --------------------------
-if filtered:
-    message = "*EMA34'ü yukarı kıran coinler:*\n" + "\n".join(filtered)
-    send_telegram(message)
+if st.button("Manuel Tarama"):
+    run_scan()
