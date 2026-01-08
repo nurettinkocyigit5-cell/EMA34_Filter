@@ -8,8 +8,8 @@ from streamlit_autorefresh import st_autorefresh
 # --------------------------
 # Telegram bilgileri
 # --------------------------
-TOKEN = "BOT_TOKEN"       # BotFather’dan aldığın token
-CHAT_ID = "YOUR_CHAT_ID"  # Telegram chat ID
+TOKEN = "8370749084:AAH1V0eFCMTvQfrsFBgcqlkSx7E8UK3YRKY"       # BotFather’dan aldığın token
+CHAT_ID = "8538760832"  # Telegram chat ID
 
 # --------------------------
 # Sayfa ayarları
